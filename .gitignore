@@ -80,3 +80,8 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
+
+# IDE and tool-specific local settings
+.vscode/
+.claude/
+*.delphilsp.json
