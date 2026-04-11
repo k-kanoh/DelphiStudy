@@ -3,7 +3,8 @@
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, Winapi.imm,
+  Winapi.Windows, Winapi.Messages, Winapi.imm, Winapi.PsAPI,
+  System.SysUtils,
   Vcl.Forms;
 
 type
@@ -40,6 +41,25 @@ var
   Hook: HHOOK;
   LAltDown, RAltDown, AltDirty: Boolean;
 
+function IsForegroundProcess(const ExeName: string): Boolean;
+var
+  PID: DWORD;
+  hProc: THandle;
+  Path: array [0 .. MAX_PATH - 1] of Char;
+begin
+  GetWindowThreadProcessId(GetForegroundWindow, PID);
+  hProc := OpenProcess($1000 { PROCESS_QUERY_LIMITED_INFORMATION } ,
+    False, PID);
+  if hProc = 0 then
+    Exit(False);
+  try
+    GetModuleFileNameEx(hProc, 0, Path, MAX_PATH);
+    Result := SameText(ExtractFileName(Path), ExeName);
+  finally
+    CloseHandle(hProc);
+  end;
+end;
+
 // alt-ime-ahk IME_SET() 相当
 procedure SetIme(Open: Boolean);
 var
@@ -58,10 +78,23 @@ begin
     SendMessage(ImeWnd, WM_IME_CONTROL, $006, Ord(Open)); // IMC_SETOPENSTATUS
 end;
 
+procedure SendF23;
+var
+  Inputs: array [0 .. 1] of TInput;
+begin
+  ZeroMemory(@Inputs, SizeOf(Inputs));
+  Inputs[0].Itype := INPUT_KEYBOARD;
+  Inputs[0].ki.wVk := VK_F23;
+  Inputs[1].Itype := INPUT_KEYBOARD;
+  Inputs[1].ki.wVk := VK_F23;
+  Inputs[1].ki.dwFlags := KEYEVENTF_KEYUP;
+  SendInput(2, Inputs[0], SizeOf(TInput));
+end;
+
 function HookCallback(Code: Integer; WP: WPARAM; LP: LPARAM): LRESULT; stdcall;
 var
   VK: Integer;
-  Inputs: array [0 .. 1] of TInput;
+  Inputs: array [0 .. 4] of TInput;
 begin
   Result := CallNextHookEx(Hook, Code, WP, LP);
 
@@ -72,6 +105,28 @@ begin
 
   if (WP = WM_KEYDOWN) or (WP = WM_SYSKEYDOWN) then
   begin
+    // Excel限定: Shift+Enter → Alt+Enter(セル内改行)
+    if (VK = VK_RETURN) and (GetKeyState(VK_SHIFT) and $8000 <> 0) and
+      IsForegroundProcess('EXCEL.EXE') then
+    begin
+      ZeroMemory(@Inputs, SizeOf(Inputs));
+      Inputs[0].Itype := INPUT_KEYBOARD; // Shift up
+      Inputs[0].ki.wVk := VK_SHIFT;
+      Inputs[0].ki.dwFlags := KEYEVENTF_KEYUP;
+      Inputs[1].Itype := INPUT_KEYBOARD; // Alt down
+      Inputs[1].ki.wVk := VK_MENU;
+      Inputs[2].Itype := INPUT_KEYBOARD; // Enter down
+      Inputs[2].ki.wVk := VK_RETURN;
+      Inputs[3].Itype := INPUT_KEYBOARD; // Alt up
+      Inputs[3].ki.wVk := VK_MENU;
+      Inputs[3].ki.dwFlags := KEYEVENTF_KEYUP;
+      Inputs[4].Itype := INPUT_KEYBOARD; // Shift down(押し直す)
+      Inputs[4].ki.wVk := VK_SHIFT;
+      SendInput(5, Inputs[0], SizeOf(TInput));
+      Result := 1;
+      Exit;
+    end;
+
     if VK = VK_LALT then
     begin
       LAltDown := True;
@@ -87,19 +142,13 @@ begin
   end
   else if (WP = WM_KEYUP) or (WP = WM_SYSKEYUP) then
   begin
+    // alt-ime-ahk準拠: ダミーキーでメニュー起動を抑制してからIME切り替え
     if (VK = VK_LALT) and LAltDown then
     begin
       LAltDown := False;
       if not AltDirty then
       begin
-        // alt-ime-ahk準拠: ダミーキーでメニュー起動を抑制してからIME切り替え
-        ZeroMemory(@Inputs, SizeOf(Inputs));
-        Inputs[0].Itype := INPUT_KEYBOARD;
-        Inputs[0].ki.wVk := VK_F23;
-        Inputs[1].Itype := INPUT_KEYBOARD;
-        Inputs[1].ki.wVk := VK_F23;
-        Inputs[1].ki.dwFlags := KEYEVENTF_KEYUP;
-        SendInput(2, Inputs[0], SizeOf(TInput));
+        SendF23;
         SetIme(False);
       end;
     end
@@ -108,13 +157,7 @@ begin
       RAltDown := False;
       if not AltDirty then
       begin
-        ZeroMemory(@Inputs, SizeOf(Inputs));
-        Inputs[0].Itype := INPUT_KEYBOARD;
-        Inputs[0].ki.wVk := VK_F23;
-        Inputs[1].Itype := INPUT_KEYBOARD;
-        Inputs[1].ki.wVk := VK_F23;
-        Inputs[1].ki.dwFlags := KEYEVENTF_KEYUP;
-        SendInput(2, Inputs[0], SizeOf(TInput));
+        SendF23;
         SetIme(True);
       end;
     end;
