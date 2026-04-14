@@ -97,9 +97,15 @@ begin
     if (VK = VK_RETURN) and (GetKeyState(VK_SHIFT) and $8000 <> 0) and
       IsForegroundProcess('EXCEL.EXE') then
     begin
+      // 左右どちらのShiftが押されているか判定
+      var ShiftVK: Word;
+      if GetKeyState(VK_LSHIFT) and $8000 <> 0 then
+        ShiftVK := VK_LSHIFT
+      else
+        ShiftVK := VK_RSHIFT;
       ZeroMemory(@Inputs, SizeOf(Inputs));
       Inputs[0].Itype := INPUT_KEYBOARD; // Shift up
-      Inputs[0].ki.wVk := VK_SHIFT;
+      Inputs[0].ki.wVk := ShiftVK;
       Inputs[0].ki.dwFlags := KEYEVENTF_KEYUP;
       Inputs[1].Itype := INPUT_KEYBOARD; // Alt down
       Inputs[1].ki.wVk := VK_MENU;
@@ -109,7 +115,7 @@ begin
       Inputs[3].ki.wVk := VK_MENU;
       Inputs[3].ki.dwFlags := KEYEVENTF_KEYUP;
       Inputs[4].Itype := INPUT_KEYBOARD; // Shift down(押し直す)
-      Inputs[4].ki.wVk := VK_SHIFT;
+      Inputs[4].ki.wVk := ShiftVK;
       SendInput(5, Inputs[0], SizeOf(TInput));
       Result := 1;
       Exit;
